@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'AWS Backup configuration with tag-based selection, 30-day retention, and cross-region copy to Oregon'
+Description: 'AWS Backup configuration with tag-based selection, 30-day retention'
 
 Resources:
   # SNS Topic for Backup Notifications
