@@ -40,13 +40,6 @@ Resources:
           - RESTORE_JOB_FAILED
         SNSTopicArn: !Ref BackupNotificationTopic
 
-  # Backup Vault in Oregon for cross-region copies
-  OregonBackupVault:
-    Type: AWS::Backup::BackupVault
-    Properties:
-      BackupVaultName: OregonBackupVault
-      # Note: This will be created in us-west-2 via the CopyAction
-
   # IAM Role for AWS Backup
   BackupRole:
     Type: AWS::IAM::Role
@@ -79,10 +72,6 @@ Resources:
             CompletionWindowMinutes: 120
             Lifecycle:
               DeleteAfterDays: 30
-            CopyActions:
-              - DestinationBackupVaultArn: !Sub 'arn:aws:backup:us-west-2:${AWS::AccountId}:backup-vault:OregonBackupVault'
-                Lifecycle:
-                  DeleteAfterDays: 30
 
   # Backup Selection - Resources tagged with Backup=True
   BackupSelection:
