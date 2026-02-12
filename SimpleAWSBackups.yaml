@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS Backup configuration with tag-based selection, 30-day retention, and cross-region copy to Oregon'
+
+Resources:
+  # SNS Topic for Backup Notifications
+  BackupNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: AWSBackupNotifications
+      DisplayName: AWS Backup Job Notifications
+
+  # SNS Topic Policy
+  BackupNotificationTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref BackupNotificationTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: backup.amazonaws.com
+            Action:
+              - SNS:Publish
+            Resource: !Ref BackupNotificationTopic
+
+  # Primary Backup Vault
+  BackupVault:
+    Type: AWS::Backup::BackupVault
+    Properties:
+      BackupVaultName: PrimaryBackupVault
+      Notifications:
+        BackupVaultEvents:
+          - BACKUP_JOB_COMPLETED
+          - BACKUP_JOB_FAILED
+          - COPY_JOB_SUCCESSFUL
+          - COPY_JOB_FAILED
+          - RESTORE_JOB_COMPLETED
+          - RESTORE_JOB_FAILED
+        SNSTopicArn: !Ref BackupNotificationTopic
+
+  # Backup Vault in Oregon for cross-region copies
+  OregonBackupVault:
+    Type: AWS::Backup::BackupVault
+    Properties:
+      BackupVaultName: OregonBackupVault
+      # Note: This will be created in us-west-2 via the CopyAction
+
+  # IAM Role for AWS Backup
+  BackupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - backup.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup
+        - arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores
+      RoleName: AWSBackupServiceRole
+
+  # Backup Plan
+  BackupPlan:
+    Type: AWS::Backup::BackupPlan
+    Properties:
+      BackupPlan:
+        BackupPlanName: DailyBackupWith30DayRetention
+        BackupPlanRule:
+          - RuleName: DailyBackups
+            TargetBackupVault: !Ref BackupVault
+            ScheduleExpression: 'cron(0 5 ? * * *)'  # Daily at 5 AM UTC
+            StartWindowMinutes: 60
+            CompletionWindowMinutes: 120
+            Lifecycle:
+              DeleteAfterDays: 30
+            CopyActions:
+              - DestinationBackupVaultArn: !Sub 'arn:aws:backup:us-west-2:${AWS::AccountId}:backup-vault:OregonBackupVault'
+                Lifecycle:
+                  DeleteAfterDays: 30
+
+  # Backup Selection - Resources tagged with Backup=True
+  BackupSelection:
+    Type: AWS::Backup::BackupSelection
+    Properties:
+      BackupPlanId: !Ref BackupPlan
+      BackupSelection:
+        SelectionName: TagBasedBackupSelection
+        IamRoleArn: !GetAtt BackupRole.Arn
+        ListOfTags:
+          - ConditionType: STRINGEQUALS
+            ConditionKey: Backup
+            ConditionValue: 'True'
+
+Outputs:
+  BackupVaultName:
+    Description: Name of the primary backup vault
+    Value: !Ref BackupVault
+    
+  BackupPlanId:
+    Description: ID of the backup plan
+    Value: !Ref BackupPlan
+    
+  BackupRoleArn:
+    Description: ARN of the IAM role used by AWS Backup
+    Value: !GetAtt BackupRole.Arn
+    
+  BackupSelectionId:
+    Description: ID of the backup selection
+    Value: !Ref BackupSelection
+    
+  SNSTopicArn:
+    Description: ARN of the SNS topic for backup notifications (subscribe email addresses here)
+    Value: !Ref BackupNotificationTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-SNSTopic'
